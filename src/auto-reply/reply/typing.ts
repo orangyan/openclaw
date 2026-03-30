@@ -1,4 +1,5 @@
 import { createTypingKeepaliveLoop } from "../../channels/typing-lifecycle.js";
+import { createTypingStartGuard } from "../../channels/typing-start-guard.js";
 import { isSilentReplyPrefixText, isSilentReplyText, SILENT_REPLY_TOKEN } from "../tokens.js";
 
 export type TypingController = {
@@ -28,6 +29,18 @@ export function createTypingController(params: {
     silentToken = SILENT_REPLY_TOKEN,
     log,
   } = params;
+  if (!onReplyStart && !onCleanup) {
+    return {
+      onReplyStart: async () => {},
+      startTypingLoop: async () => {},
+      startTypingOnText: async () => {},
+      refreshTypingTtl: () => {},
+      isActive: () => false,
+      markRunComplete: () => {},
+      markDispatchIdle: () => {},
+      cleanup: () => {},
+    };
+  }
   let started = false;
   let active = false;
   let runComplete = false;
@@ -99,15 +112,16 @@ export function createTypingController(params: {
 
   const isActive = () => active && !sealed;
 
+  const startGuard = createTypingStartGuard({
+    isSealed: () => sealed,
+    shouldBlock: () => runComplete,
+    rethrowOnError: true,
+  });
+
   const triggerTyping = async () => {
-    if (sealed) {
-      return;
-    }
-    // Late callbacks after a run completed should never restart typing.
-    if (runComplete) {
-      return;
-    }
-    await onReplyStart?.();
+    await startGuard.run(async () => {
+      await onReplyStart?.();
+    });
   };
 
   const typingLoop = createTypingKeepaliveLoop({

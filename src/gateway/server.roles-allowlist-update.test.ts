@@ -3,8 +3,8 @@ import os from "node:os";
 import path from "node:path";
 import { describe, expect, test, vi } from "vitest";
 import { WebSocket } from "ws";
-import { CONFIG_PATH } from "../config/config.js";
 import type { DeviceIdentity } from "../infra/device-identity.js";
+import { resolveRestartSentinelPath } from "../infra/restart-sentinel.js";
 import { GATEWAY_CLIENT_MODES, GATEWAY_CLIENT_NAMES } from "../utils/message-channel.js";
 import type { GatewayClient } from "./client.js";
 
@@ -71,9 +71,19 @@ const approveAllPendingPairings = async () => {
   const { approveDevicePairing, listDevicePairing } = await import("../infra/device-pairing.js");
   const list = await listDevicePairing();
   for (const pending of list.pending) {
-    await approveDevicePairing(pending.requestId);
+    await approveDevicePairing(pending.requestId, {
+      callerScopes: pending.scopes ?? ["operator.admin"],
+    });
   }
 };
+
+function getGatewayTestConfigPath(): string {
+  const configPath = process.env.OPENCLAW_CONFIG_PATH;
+  if (!configPath) {
+    throw new Error("OPENCLAW_CONFIG_PATH is required in the gateway test environment");
+  }
+  return configPath;
+}
 
 const connectNodeClientWithPairing = async (params: Parameters<typeof connectNodeClient>[0]) => {
   try {
@@ -151,7 +161,7 @@ describe("gateway update.run", () => {
       }, FAST_WAIT_OPTS);
       expect(sigusr1).toHaveBeenCalled();
 
-      const sentinelPath = path.join(os.homedir(), ".openclaw", "restart-sentinel.json");
+      const sentinelPath = resolveRestartSentinelPath();
       const raw = await fs.readFile(sentinelPath, "utf-8");
       const parsed = JSON.parse(raw) as {
         payload?: { kind?: string; stats?: { mode?: string } };
@@ -168,8 +178,9 @@ describe("gateway update.run", () => {
     process.on("SIGUSR1", sigusr1);
 
     try {
-      await fs.mkdir(path.dirname(CONFIG_PATH), { recursive: true });
-      await fs.writeFile(CONFIG_PATH, JSON.stringify({ update: { channel: "beta" } }, null, 2));
+      const configPath = getGatewayTestConfigPath();
+      await fs.mkdir(path.dirname(configPath), { recursive: true });
+      await fs.writeFile(configPath, JSON.stringify({ update: { channel: "beta" } }, null, 2));
       const updateMock = vi.mocked(runGatewayUpdate);
       updateMock.mockClear();
 
@@ -364,6 +375,83 @@ describe("gateway node command allowlist", () => {
       ).rejects.toThrow(/pairing required/i);
     } finally {
       iosClient?.stop();
+    }
+  });
+
+  test("filters system.run for confusable iOS metadata at connect time", async () => {
+    const { loadOrCreateDeviceIdentity } = await import("../infra/device-identity.js");
+    const cases = [
+      {
+        label: "dotted-i-platform",
+        platform: "İOS",
+        deviceFamily: "iPhone",
+      },
+      {
+        label: "greek-omicron-family",
+        platform: "ios",
+        deviceFamily: "iPhοne",
+      },
+    ] as const;
+
+    for (const testCase of cases) {
+      const deviceIdentityPath = path.join(
+        os.tmpdir(),
+        `openclaw-confusable-node-${testCase.label}-${Date.now()}-${Math.random().toString(36).slice(2)}.json`,
+      );
+      const deviceIdentity = loadOrCreateDeviceIdentity(deviceIdentityPath);
+      const displayName = `node-${testCase.label}`;
+
+      const findConnectedNode = async () => {
+        const listRes = await rpcReq<{
+          nodes?: Array<{
+            nodeId: string;
+            displayName?: string;
+            connected?: boolean;
+            commands?: string[];
+          }>;
+        }>(ws, "node.list", {});
+        return (listRes.payload?.nodes ?? []).find(
+          (node) => node.connected && node.displayName === displayName,
+        );
+      };
+
+      let client: GatewayClient | undefined;
+      try {
+        client = await connectNodeClientWithPairing({
+          port,
+          commands: ["system.run", "canvas.snapshot"],
+          platform: testCase.platform,
+          deviceFamily: testCase.deviceFamily,
+          instanceId: displayName,
+          displayName,
+          deviceIdentity,
+        });
+
+        await expect
+          .poll(
+            async () => {
+              const node = await findConnectedNode();
+              return node?.commands?.toSorted() ?? [];
+            },
+            { timeout: 2_000, interval: 10 },
+          )
+          .toEqual(["canvas.snapshot"]);
+
+        const node = await findConnectedNode();
+        const nodeId = node?.nodeId ?? "";
+        expect(nodeId).toBeTruthy();
+
+        const systemRunRes = await rpcReq(ws, "node.invoke", {
+          nodeId,
+          command: "system.run",
+          params: { command: "echo blocked" },
+          idempotencyKey: `allowlist-confusable-${testCase.label}`,
+        });
+        expect(systemRunRes.ok).toBe(false);
+        expect(systemRunRes.error?.message ?? "").toContain("node command not allowed");
+      } finally {
+        client?.stop();
+      }
     }
   });
 });
