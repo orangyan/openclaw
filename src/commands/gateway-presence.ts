@@ -1,12 +1,14 @@
-import { readStringValue } from "../shared/string-coerce.js";
+/** Extracts the gateway's self presence entry from status/presence payloads. */
+import { readStringValue } from "@openclaw/normalization-core/string-coerce";
 
-export type GatewaySelfPresence = {
+type GatewaySelfPresence = {
   host?: string;
   ip?: string;
   version?: string;
   platform?: string;
 };
 
+/** Picks host, ip, version, and platform from the gateway self presence record. */
 export function pickGatewaySelfPresence(presence: unknown): GatewaySelfPresence | null {
   if (!Array.isArray(presence)) {
     return null;
