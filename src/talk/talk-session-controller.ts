@@ -1,3 +1,4 @@
+// Talk session controller coordinates voice session state and output activity.
 import { normalizeOptionalString } from "@openclaw/normalization-core/string-coerce";
 import {
   createTalkEventSequencer,
@@ -249,4 +250,4 @@ export function normalizeTalkTransport(value: string | undefined): string | unde
   return normalized;
 }
 
-export type { TalkBrain, TalkEvent, TalkEventContext, TalkEventInput, TalkMode, TalkTransport };
+export type { TalkBrain, TalkEvent, TalkEventInput, TalkMode, TalkTransport };

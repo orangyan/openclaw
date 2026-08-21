@@ -3,8 +3,8 @@ import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { afterAll, beforeAll, vi, type Mock } from "vitest";
-import { captureEnv } from "../test-utils/env.js";
-import { withFastReplyConfig } from "./reply/get-reply-fast-path.js";
+import { withEnvAsync } from "../test-utils/env.js";
+import { withFastReplyConfig } from "./reply/get-reply-fast-path.test-support.js";
 
 type ReplyRuntimeMocks = {
   runEmbeddedAgent: Mock;
@@ -27,19 +27,20 @@ const replyRuntimeMockState = vi.hoisted(() => ({
 vi.mock("../agents/embedded-agent.js", () => ({
   abortEmbeddedAgentRun: vi.fn().mockReturnValue(false),
   runEmbeddedAgent: (...args: unknown[]) => replyRuntimeMockState.mocks.runEmbeddedAgent(...args),
-  queueEmbeddedAgentMessage: vi.fn().mockReturnValue(false),
   resolveEmbeddedSessionLane: (key: string) => `session:${key.trim() || "main"}`,
   isEmbeddedAgentRunActive: vi.fn().mockReturnValue(false),
   isEmbeddedAgentRunStreaming: vi.fn().mockReturnValue(false),
 }));
 
 vi.mock("../agents/model-catalog.runtime.js", () => ({
-  loadModelCatalog: (...args: unknown[]) => replyRuntimeMockState.mocks.loadModelCatalog(...args),
+  loadProviderScopedThinkingCatalog: async () => [],
+  loadPreparedModelCatalog: (...args: unknown[]) =>
+    replyRuntimeMockState.mocks.loadModelCatalog(...args),
 }));
 
 vi.mock("../agents/auth-profiles/session-override.js", () => ({
   clearSessionAuthProfileOverride: vi.fn(),
-  resolveSessionAuthProfileOverride: vi.fn().mockResolvedValue(undefined),
+  resolveSessionAuthSelection: vi.fn().mockResolvedValue(undefined),
 }));
 
 vi.mock("../commands-registry.runtime.js", () => ({
@@ -121,15 +122,6 @@ vi.mock("./reply/agent-runner.runtime.js", () => ({
   },
 }));
 
-const HOME_ENV_KEYS = [
-  "HOME",
-  "USERPROFILE",
-  "HOMEDRIVE",
-  "HOMEPATH",
-  "OPENCLAW_STATE_DIR",
-  "OPENCLAW_AGENT_DIR",
-] as const;
-
 /** Creates a per-test HOME fixture and restores environment variables after each case. */
 export function createTempHomeHarness(options: { prefix: string; beforeEachCase?: () => void }) {
   let fixtureRoot = "";
@@ -149,26 +141,24 @@ export function createTempHomeHarness(options: { prefix: string; beforeEachCase?
   async function withTempHome<T>(fn: (home: string) => Promise<T>): Promise<T> {
     const home = path.join(fixtureRoot, `case-${++caseId}`);
     await fs.mkdir(path.join(home, ".openclaw", "agents", "main", "sessions"), { recursive: true });
-    const envSnapshot = captureEnv([...HOME_ENV_KEYS]);
-    process.env.HOME = home;
-    process.env.USERPROFILE = home;
-    process.env.OPENCLAW_STATE_DIR = path.join(home, ".openclaw");
-    process.env.OPENCLAW_AGENT_DIR = path.join(home, ".openclaw", "agent");
-
+    const env: Record<string, string | undefined> = {
+      HOME: home,
+      USERPROFILE: home,
+      OPENCLAW_STATE_DIR: path.join(home, ".openclaw"),
+      OPENCLAW_AGENT_DIR: path.join(home, ".openclaw", "agent"),
+    };
     if (process.platform === "win32") {
       const match = home.match(/^([A-Za-z]:)(.*)$/);
       if (match) {
-        process.env.HOMEDRIVE = match[1];
-        process.env.HOMEPATH = match[2] || "\\";
+        env.HOMEDRIVE = match[1];
+        env.HOMEPATH = match[2] || "\\";
       }
     }
 
-    try {
+    return await withEnvAsync(env, async () => {
       options.beforeEachCase?.();
       return await fn(home);
-    } finally {
-      envSnapshot.restore();
-    }
+    });
   }
 
   return { withTempHome };

@@ -1,4 +1,5 @@
-import { redactSensitiveText } from "../logging/redact.js";
+// Browser CDP helpers connect plugin browser automation to Chrome DevTools Protocol sessions.
+import { redactToolPayloadText } from "../logging/redact.js";
 
 /** Detect an operator-supplied port before WHATWG URL normalization drops default ports. */
 function hasRawExplicitPort(raw: string): boolean {
@@ -14,6 +15,7 @@ function hasRawExplicitPort(raw: string): boolean {
   return /:\d+$/.test(hostPort);
 }
 
+/** Parsed browser/CDP endpoint details with display-safe normalized URL variants. */
 export type BrowserHttpUrlParseResult = {
   /** Parsed URL object retained for callers that need protocol, host, path, or credentials. */
   parsed: URL;
@@ -98,8 +100,8 @@ export function redactCdpUrl(cdpUrl: string | null | undefined): string | null |
     const parsed = new URL(trimmed);
     parsed.username = "";
     parsed.password = "";
-    return redactSensitiveText(parsed.toString().replace(/\/$/, ""));
+    return redactToolPayloadText(parsed.toString().replace(/\/$/, ""));
   } catch {
-    return redactSensitiveText(trimmed);
+    return redactToolPayloadText(trimmed);
   }
 }

@@ -1,9 +1,8 @@
+// Gateway config snapshot test helpers.
+// Builds config snapshots for mocked config module state.
 import crypto from "node:crypto";
 import type { ConfigFileSnapshot, OpenClawConfig } from "../config/types.js";
 
-/**
- * Config snapshot builders shared by gateway tests.
- */
 function hashConfigRaw(raw: string | null): string {
   return crypto
     .createHash("sha256")
@@ -25,6 +24,7 @@ export function buildTestConfigSnapshot(params: {
 }): ConfigFileSnapshot {
   return {
     path: params.path,
+    includedPaths: [],
     exists: params.exists,
     raw: params.raw,
     parsed: params.parsed,

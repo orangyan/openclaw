@@ -1,7 +1,7 @@
-import type { HealthSummary } from "../commands/health.js";
+// Gateway maintenance-state test helper.
+// Builds minimal timer/health/chat state for maintenance tests.
+import type { HealthSummary } from "./health/types.js";
 import { createChatRunState } from "./server-chat-state.js";
-
-// Minimal Gateway maintenance state fixture for tests.
 
 /** Create a Gateway maintenance-state stub with configurable health/presence versions. */
 export function createGatewayMaintenanceStateForTest(params?: {
@@ -17,15 +17,19 @@ export function createGatewayMaintenanceStateForTest(params?: {
     getHealthVersion: () => params?.healthVersion ?? 1,
     refreshGatewayHealthSnapshot: async () =>
       params?.healthSummary ?? ({ ok: true } as HealthSummary),
-    logHealth: { error: () => {} },
+    logHealth: { info: () => {}, error: () => {} },
+    restartRunningChannels: async () => {},
+    refreshPresence: () => {},
+    resetEventLoopHealth: () => {},
     dedupe: new Map(),
     chatAbortControllers: new Map(),
+    chatQueuedTurns: new Map(),
+    restartRecoveryCandidates: new Map(),
     chatRunState,
-    chatRunBuffers: chatRunState.buffers,
-    chatDeltaSentAt: chatRunState.deltaSentAt,
-    chatDeltaLastBroadcastLen: chatRunState.deltaLastBroadcastLen,
     removeChatRun: () => undefined,
     agentRunSeq: new Map(),
     nodeSendToSession: () => {},
+    getRuntimeConfig: () => ({}),
+    runDeliveryQueueMediaGc: async () => undefined,
   };
 }

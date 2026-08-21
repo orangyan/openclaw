@@ -1,4 +1,5 @@
-import type { StreamFn } from "../../../agents/runtime/index.js";
+// Stream payload utilities normalize provider stream payload fields for wrappers.
+import type { StreamFn } from "@openclaw/llm-core";
 
 /** Wraps a stream function and lets callers mutate outgoing provider payload objects. */
 export function streamWithPayloadPatch(

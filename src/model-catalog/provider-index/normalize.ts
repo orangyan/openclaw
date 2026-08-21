@@ -1,3 +1,4 @@
+// Provider-index normalization validates generated discovery metadata and rejects unsafe provider entries.
 import { normalizeModelCatalog } from "@openclaw/model-catalog-core/model-catalog-normalize";
 import { normalizeModelCatalogProviderId } from "@openclaw/model-catalog-core/model-catalog-refs";
 import type { ModelCatalogProvider } from "@openclaw/model-catalog-core/model-catalog-types";
@@ -71,10 +72,6 @@ function normalizePlugin(value: unknown): OpenClawProviderIndexPlugin | undefine
     ...(source ? { source } : {}),
     ...(install ? { install } : {}),
   };
-}
-
-function normalizeCategories(value: unknown): readonly string[] {
-  return normalizeUniqueTrimmedStringList(value);
 }
 
 function normalizePreviewCatalog(params: {
@@ -191,7 +188,7 @@ function normalizeProvider(
     return undefined;
   }
   const docs = normalizeOptionalString(value.docs) ?? "";
-  const categories = normalizeCategories(value.categories);
+  const categories = normalizeUniqueTrimmedStringList(value.categories);
   const authChoices = normalizeAuthChoices({
     providerId,
     providerName: name,

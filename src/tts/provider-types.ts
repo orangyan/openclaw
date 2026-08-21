@@ -1,3 +1,4 @@
+// TTS provider types describe speech provider config and synthesize APIs.
 import type { TalkProviderConfig } from "../config/types.gateway.js";
 import type { OpenClawConfig } from "../config/types.js";
 import type { ResolvedTtsPersona } from "../config/types.tts.js";
@@ -130,6 +131,8 @@ export type SpeechListVoicesRequest = {
   providerConfig?: SpeechProviderConfig;
   apiKey?: string;
   baseUrl?: string;
+  /** Core-resolved request timeout after config and provider defaults. */
+  timeoutMs?: number;
 };
 
 /** Provider hook input for resolving normalized config from raw OpenClaw config. */

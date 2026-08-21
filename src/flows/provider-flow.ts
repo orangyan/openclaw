@@ -1,3 +1,4 @@
+// Provider setup flow configures provider credentials, models, and defaults.
 import type { OpenClawConfig } from "../config/types.openclaw.js";
 import { normalizePluginsConfig, resolveEffectiveEnableState } from "../plugins/config-state.js";
 import * as providerAuthChoices from "../plugins/provider-auth-choices.js";
@@ -9,6 +10,13 @@ import { sortFlowContributionsByLabel } from "./types.js";
 type ProviderFlowScope = "text-inference" | "image-generation" | "music-generation";
 
 const DEFAULT_PROVIDER_FLOW_SCOPE: ProviderFlowScope = "text-inference";
+
+type ProviderSetupFlowParams = {
+  config?: OpenClawConfig;
+  workspaceDir?: string;
+  env?: NodeJS.ProcessEnv;
+  scope?: ProviderFlowScope | "all";
+};
 
 type ProviderSetupFlowOption = FlowOption & {
   onboardingScopes?: ProviderFlowScope[];
@@ -27,18 +35,17 @@ type ProviderSetupFlowContribution = FlowContribution & {
 
 function includesProviderFlowScope(
   scopes: readonly ProviderFlowScope[] | undefined,
-  scope: ProviderFlowScope,
+  scope: ProviderFlowScope | "all",
 ): boolean {
   // Missing scope means the historic text-inference onboarding surface only.
-  return scopes ? scopes.includes(scope) : scope === DEFAULT_PROVIDER_FLOW_SCOPE;
+  return (
+    scope === "all" || (scopes ? scopes.includes(scope) : scope === DEFAULT_PROVIDER_FLOW_SCOPE)
+  );
 }
 
-function resolveInstallCatalogProviderSetupFlowContributions(params?: {
-  config?: OpenClawConfig;
-  workspaceDir?: string;
-  env?: NodeJS.ProcessEnv;
-  scope?: ProviderFlowScope;
-}): ProviderSetupFlowContribution[] {
+function resolveInstallCatalogProviderSetupFlowContributions(
+  params?: ProviderSetupFlowParams,
+): ProviderSetupFlowContribution[] {
   const scope = params?.scope ?? DEFAULT_PROVIDER_FLOW_SCOPE;
   const normalizedPluginsConfig = normalizePluginsConfig(params?.config?.plugins);
   return providerInstallCatalog
@@ -90,12 +97,9 @@ function resolveInstallCatalogProviderSetupFlowContributions(params?: {
     });
 }
 
-function resolveManifestProviderSetupFlowContributions(params?: {
-  config?: OpenClawConfig;
-  workspaceDir?: string;
-  env?: NodeJS.ProcessEnv;
-  scope?: ProviderFlowScope;
-}): ProviderSetupFlowContribution[] {
+function resolveManifestProviderSetupFlowContributions(
+  params?: ProviderSetupFlowParams,
+): ProviderSetupFlowContribution[] {
   const scope = params?.scope ?? DEFAULT_PROVIDER_FLOW_SCOPE;
   return providerAuthChoices
     .resolveManifestProviderAuthChoices({
@@ -137,12 +141,9 @@ function resolveManifestProviderSetupFlowContributions(params?: {
     });
 }
 
-export function resolveProviderSetupFlowContributions(params?: {
-  config?: OpenClawConfig;
-  workspaceDir?: string;
-  env?: NodeJS.ProcessEnv;
-  scope?: ProviderFlowScope;
-}): ProviderSetupFlowContribution[] {
+export function resolveProviderSetupFlowContributions(
+  params?: ProviderSetupFlowParams,
+): ProviderSetupFlowContribution[] {
   const scope = params?.scope ?? DEFAULT_PROVIDER_FLOW_SCOPE;
   const manifestContributions = resolveManifestProviderSetupFlowContributions({
     ...params,

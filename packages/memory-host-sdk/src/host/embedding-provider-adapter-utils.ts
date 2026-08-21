@@ -1,4 +1,5 @@
-import { normalizeLowercaseStringOrEmpty } from "./string-utils.js";
+// Memory Host SDK helper module supports embedding provider adapter utils behavior.
+import { normalizeLowercaseStringOrEmpty } from "@openclaw/normalization-core/string-coerce";
 
 // Adapter helpers shared by remote embedding provider implementations.
 
@@ -7,7 +8,7 @@ export function isMissingEmbeddingApiKeyError(err: unknown): boolean {
   return err instanceof Error && err.message.includes("No API key found for provider");
 }
 
-/** Return stable cache headers after removing provider-specific secret headers. */
+/** Return stable cache headers after removing adapter-declared secret headers. */
 export function sanitizeEmbeddingCacheHeaders(
   headers: Record<string, string>,
   excludedHeaderNames: string[],

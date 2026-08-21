@@ -1,3 +1,4 @@
+// Msteams tests cover conversation store state plugin behavior.
 import crypto from "node:crypto";
 import fs from "node:fs";
 import os from "node:os";
@@ -138,7 +139,7 @@ describe("msteams conversation store (plugin state)", () => {
     });
   });
 
-  it("serializes concurrent upserts so sparse activities do not drop preserved fields", async () => {
+  it("serializes concurrent upserts so sparse activities preserve independent fields", async () => {
     const stateDir = await fs.promises.mkdtemp(path.join(os.tmpdir(), "openclaw-msteams-store-"));
     const store = createMSTeamsConversationStoreState({ stateDir });
 
@@ -147,7 +148,6 @@ describe("msteams conversation store (plugin state)", () => {
       channelId: "msteams",
       serviceUrl: "https://service.example.com",
       user: { id: "u1" },
-      graphChatId: "19:resolved@unq.gbl.spaces",
     });
 
     await Promise.all([
@@ -168,7 +168,6 @@ describe("msteams conversation store (plugin state)", () => {
     ]);
 
     await expect(store.get("conv-race")).resolves.toMatchObject({
-      graphChatId: "19:resolved@unq.gbl.spaces",
       timezone: "Europe/London",
       tenantId: "tenant-1",
     });

@@ -1,3 +1,4 @@
+// Msteams tests cover pending uploads fs plugin behavior.
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
@@ -10,7 +11,6 @@ import {
   setPendingUploadActivityIdFs,
   storePendingUploadFs,
 } from "./pending-uploads-fs.js";
-import { clearPendingUploads } from "./pending-uploads.js";
 import { setMSTeamsRuntime } from "./runtime.js";
 import { msteamsRuntimeStub } from "./test-support/runtime.js";
 
@@ -53,7 +53,6 @@ describe("msteams pending uploads (fs-backed)", () => {
   beforeEach(() => {
     resetPluginStateStoreForTests();
     setMSTeamsRuntime(msteamsRuntimeStub);
-    clearPendingUploads();
   });
 
   afterEach(async () => {
@@ -242,7 +241,6 @@ describe("prepareFileConsentActivityFs end-to-end", () => {
   beforeEach(() => {
     resetPluginStateStoreForTests();
     setMSTeamsRuntime(msteamsRuntimeStub);
-    clearPendingUploads();
   });
 
   afterEach(async () => {

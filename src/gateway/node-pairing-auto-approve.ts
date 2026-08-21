@@ -1,19 +1,13 @@
+// Gateway node pairing auto-approval policy.
+// Allows first-time node pairing from configured CIDRs while rejecting upgrades/browser paths.
 import { isTrustedProxyAddress } from "./net.js";
+import type { NodePairingAutoApproveClientIpSource } from "./node-pairing-auto-approve.types.js";
 
-// Node auto-approval is limited to first-time node pairings from configured
-// CIDRs. Browser/control-ui/webchat paths and upgrade requests require manual
-// approval because they can expand trust or user-facing capability.
-export type NodePairingAutoApproveReason =
+type NodePairingAutoApproveReason =
   | "not-paired"
   | "role-upgrade"
   | "scope-upgrade"
   | "metadata-upgrade";
-
-type NodePairingAutoApproveClientIpSource =
-  | "direct"
-  | "trusted-proxy"
-  | "loopback-trusted-proxy"
-  | "none";
 
 /** Classifies how the gateway learned the client IP for node auto-approval. */
 export function resolveNodePairingClientIpSource(params: {
@@ -31,8 +25,8 @@ export function resolveNodePairingClientIpSource(params: {
   return params.remoteIsLoopback ? "loopback-trusted-proxy" : "trusted-proxy";
 }
 
-/** Returns true when a node pairing request can be auto-approved by trusted CIDR policy. */
-export function shouldAutoApproveNodePairingFromTrustedCidrs(params: {
+/** Shared eligibility inputs for non-interactive first-time node pairing approvals. */
+export type FreshNodePairingEligibilityParams = {
   existingPairedDevice: boolean;
   role: string;
   reason: NodePairingAutoApproveReason;
@@ -42,8 +36,17 @@ export function shouldAutoApproveNodePairingFromTrustedCidrs(params: {
   isWebchat: boolean;
   reportedClientIpSource: NodePairingAutoApproveClientIpSource;
   reportedClientIp?: string;
-  autoApproveCidrs?: readonly string[];
-}): boolean {
+};
+
+/**
+ * Shared floor for every non-interactive node pairing approval (trusted-CIDR,
+ * SSH-verified): only a fresh, scopeless, non-browser `role: node` request
+ * with a directly attributable client IP qualifies. Upgrades and spoofable
+ * loopback trusted-proxy header paths always stay on the manual prompt.
+ */
+export function isEligibleFreshNodePairingRequest(
+  params: FreshNodePairingEligibilityParams,
+): boolean {
   if (params.existingPairedDevice) {
     return false;
   }
@@ -65,7 +68,16 @@ export function shouldAutoApproveNodePairingFromTrustedCidrs(params: {
   ) {
     return false;
   }
-  if (!params.reportedClientIp) {
+  return Boolean(params.reportedClientIp);
+}
+
+/** Returns true when a node pairing request can be auto-approved by trusted CIDR policy. */
+export function shouldAutoApproveNodePairingFromTrustedCidrs(
+  params: FreshNodePairingEligibilityParams & {
+    autoApproveCidrs?: readonly string[];
+  },
+): boolean {
+  if (!isEligibleFreshNodePairingRequest(params) || !params.reportedClientIp) {
     return false;
   }
 

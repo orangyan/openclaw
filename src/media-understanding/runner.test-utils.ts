@@ -1,3 +1,5 @@
+// Shared media runner test utilities create temporary audio/video fixtures and
+// attachment caches with host tool discovery disabled.
 import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
@@ -7,7 +9,8 @@ import { createMediaAttachmentCache, normalizeMediaAttachments } from "./runner.
 
 // Temp-file fixtures for media runner tests; keep cache roots scoped to generated files.
 type MediaFixtureParams = {
-  ctx: { MediaPath: string; MediaType: string };
+  ctx: { media: Array<{ path: string; contentType: string }> };
+  mediaPath: string;
   media: ReturnType<typeof normalizeMediaAttachments>;
   cache: ReturnType<typeof createMediaAttachmentCache>;
 };
@@ -27,7 +30,7 @@ export async function withMediaFixture(
     `${params.filePrefix}-${Date.now().toString()}.${params.extension}`,
   );
   await fs.writeFile(tmpPath, params.fileContents);
-  const ctx = { MediaPath: tmpPath, MediaType: params.mediaType };
+  const ctx = { media: [{ path: tmpPath, contentType: params.mediaType }] };
   const media = normalizeMediaAttachments(ctx);
   const cache = createMediaAttachmentCache(media, {
     localPathRoots: [path.dirname(tmpPath)],
@@ -37,7 +40,7 @@ export async function withMediaFixture(
   try {
     // Avoid accidentally finding host audio/video tools during unit tests.
     await withEnvAsync({ PATH: "" }, async () => {
-      await run({ ctx, media, cache });
+      await run({ ctx, mediaPath: tmpPath, media, cache });
     });
   } finally {
     await cache.cleanup();

@@ -1,3 +1,4 @@
+// Setup wizard types describe onboarding choices and derived config.
 import type { GatewayAuthChoice } from "../commands/onboard-types.js";
 import type { SecretInput } from "../config/types.secrets.js";
 
@@ -14,7 +15,6 @@ export type QuickstartGatewayDefaults = {
   token?: SecretInput;
   password?: SecretInput;
   customBindHost?: string;
-  tailscaleResetOnExit: boolean;
 };
 
 export type GatewayWizardSettings = {
@@ -24,5 +24,4 @@ export type GatewayWizardSettings = {
   authMode: GatewayAuthChoice;
   gatewayToken?: string;
   tailscaleMode: "off" | "serve" | "funnel";
-  tailscaleResetOnExit: boolean;
 };

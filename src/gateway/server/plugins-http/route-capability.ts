@@ -1,3 +1,4 @@
+// Plugin HTTP route capability helpers discover node-authorized route surfaces from plugin registrations.
 import type { PluginRegistry } from "../../../plugins/registry.js";
 import {
   resolvePluginNodeCapabilityTtlMs,
@@ -33,7 +34,7 @@ function resolvePluginNodeCapabilityRouteSurface(
 }
 
 /** Lists all node-capability routes matching the already canonicalized path context. */
-export function findMatchingPluginNodeCapabilityRoutes(
+function findMatchingPluginNodeCapabilityRoutes(
   registry: PluginRegistry,
   context: PluginRoutePathContext,
 ): PluginNodeCapabilityRoute[] {
@@ -52,11 +53,6 @@ export function findMatchingPluginNodeCapabilityRoute(
   context: PluginRoutePathContext,
 ): PluginNodeCapabilityRoute | undefined {
   return findMatchingPluginNodeCapabilityRoutes(registry, context)[0];
-}
-
-/** Lists node-capability surface names advertised by the active plugin registry. */
-export function listPluginNodeCapabilitySurfaces(registry: PluginRegistry): string[] {
-  return listPluginNodeCapabilities(registry).map((entry) => entry.surface);
 }
 
 /** Lists unique node-capability surfaces, preferring the shortest TTL per surface. */

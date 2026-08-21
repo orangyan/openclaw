@@ -24,10 +24,13 @@ function buildLegacyRealtimeTalkCompat(
     return undefined;
   }
   const compat: Record<string, unknown> = {};
-  for (const key of ["model", "voice", "mode", "transport", "brain"] as const) {
+  for (const key of ["model", "mode", "transport", "brain"] as const) {
     if (talk[key] !== undefined) {
       compat[key] = talk[key];
     }
+  }
+  if (talk.voice !== undefined) {
+    compat.speakerVoice = talk.voice;
   }
   if (Object.keys(compat).length === 0) {
     return undefined;

@@ -11,25 +11,6 @@ import kotlinx.serialization.json.contentOrNull
 /** Default canvas seam color used when gateway/user params omit a hex color. */
 const val DEFAULT_SEAM_COLOR_ARGB: Long = 0xFF4F7A9A
 
-/** Small tuple used by Android node handlers that need four return values. */
-data class Quad<A, B, C, D>(
-  val first: A,
-  val second: B,
-  val third: C,
-  val fourth: D,
-)
-
-/** Escapes a Kotlin string into a JSON string literal without building a JsonElement. */
-fun String.toJsonString(): String {
-  val escaped =
-    this
-      .replace("\\", "\\\\")
-      .replace("\"", "\\\"")
-      .replace("\n", "\\n")
-      .replace("\r", "\\r")
-  return "\"$escaped\""
-}
-
 fun JsonElement?.asObjectOrNull(): JsonObject? = this as? JsonObject
 
 /** Parses invoke params into a JSON object, returning null for absent/malformed input. */
@@ -66,15 +47,15 @@ fun parseJsonString(
   key: String,
 ): String? = readJsonPrimitive(params, key)?.contentOrNull
 
-/** Parses strict true/false flags from string-like JSON primitives. */
+/** Parses true/false flags from JSON primitives, including common string aliases. */
 fun parseJsonBooleanFlag(
   params: JsonObject?,
   key: String,
 ): Boolean? {
   val value = readJsonPrimitive(params, key)?.contentOrNull?.trim()?.lowercase() ?: return null
   return when (value) {
-    "true" -> true
-    "false" -> false
+    "true", "yes", "1" -> true
+    "false", "no", "0" -> false
     else -> null
   }
 }
@@ -109,6 +90,3 @@ fun normalizeMainKey(raw: String?): String? {
   val trimmed = raw?.trim().orEmpty()
   return if (trimmed.isEmpty()) null else trimmed
 }
-
-/** Returns true only for the canonical main-session key understood by gateway UI. */
-fun isCanonicalMainSessionKey(key: String): Boolean = key == "main"

@@ -1,3 +1,4 @@
+// Verbose tar install helpers parse archive extraction output for diagnostics.
 import { normalizeStringEntries } from "@openclaw/normalization-core/string-normalization";
 
 const TAR_VERBOSE_MONTHS = new Set([
@@ -33,8 +34,10 @@ function mapTarVerboseTypeChar(typeChar: string): string {
       return "Socket";
     case "d":
       return "Directory";
-    default:
+    case "-":
       return "File";
+    default:
+      throw new Error(`unable to parse tar entry type: ${typeChar}`);
   }
 }
 

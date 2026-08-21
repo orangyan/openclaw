@@ -1,18 +1,42 @@
 /**
  * Gateway config mutation for local non-interactive onboarding.
  *
- * This module owns port/bind/auth validation and token/ref preservation before
- * the final config write happens.
+ * This module owns port/bind/auth validation and existing-setting preservation
+ * before the final config write happens.
  */
 import { normalizeOptionalString } from "@openclaw/normalization-core/string-coerce";
 import { formatCliCommand } from "../../../cli/command-format.js";
 import { formatInvalidPortOption } from "../../../cli/error-format.js";
 import type { OpenClawConfig } from "../../../config/types.openclaw.js";
-import { isValidEnvSecretRefId, resolveSecretInputRef } from "../../../config/types.secrets.js";
+import {
+  isValidEnvSecretRefId,
+  resolveSecretInputRef,
+  type SecretRef,
+} from "../../../config/types.secrets.js";
+import { provisionGatewayTokenStoreRef } from "../../../gateway/auth-token-store-ref.js";
 import type { RuntimeEnv } from "../../../runtime.js";
-import { resolveDefaultSecretProviderAlias } from "../../../secrets/ref-contract.js";
+import { createGatewayEnvSecretRef } from "../../../secrets/ref-contract.js";
 import { normalizeGatewayTokenInput, randomToken } from "../../onboard-helpers.js";
 import type { OnboardOptions } from "../../onboard-types.js";
+
+/** Resolves what `gateway.auth.token` should hold once setup owns the token value. */
+function resolveGeneratedTokenInput(params: {
+  config: OpenClawConfig;
+  secretInputMode: OnboardOptions["secretInputMode"];
+  token: string | undefined;
+  ambientEnvOnly: boolean;
+}): SecretRef | string {
+  if (params.secretInputMode !== "ref") {
+    return params.token ?? randomToken();
+  }
+  if (params.ambientEnvOnly) {
+    return createGatewayEnvSecretRef(params.config, "OPENCLAW_GATEWAY_TOKEN");
+  }
+  return provisionGatewayTokenStoreRef({
+    config: params.config,
+    ...(params.token ? { token: params.token } : {}),
+  }).ref;
+}
 
 /** Applies gateway CLI options to the pending config and returns normalized runtime settings. */
 export function applyNonInteractiveGatewayConfig(params: {
@@ -26,7 +50,6 @@ export function applyNonInteractiveGatewayConfig(params: {
   bind: string;
   authMode: string;
   tailscaleMode: string;
-  tailscaleResetOnExit: boolean;
 } | null {
   const { opts, runtime } = params;
 
@@ -40,25 +63,46 @@ export function applyNonInteractiveGatewayConfig(params: {
     return null;
   }
 
+  const existingGateway = params.nextConfig.gateway;
   const port = gatewayPort ?? params.defaultPort;
-  let bind = opts.gatewayBind ?? "loopback";
-  const authModeRaw = opts.gatewayAuth ?? "token";
-  if (authModeRaw !== "token" && authModeRaw !== "password") {
+  let bind = opts.gatewayBind ?? existingGateway?.bind ?? "loopback";
+  const explicitAuthMode = opts.gatewayAuth;
+  if (
+    explicitAuthMode !== undefined &&
+    explicitAuthMode !== "token" &&
+    explicitAuthMode !== "password"
+  ) {
     runtime.error('Invalid --gateway-auth. Use "token" or "password".');
     runtime.exit(1);
     return null;
   }
-  let authMode = authModeRaw;
-  const tailscaleMode = opts.tailscale ?? "off";
-  const tailscaleResetOnExit = Boolean(opts.tailscaleResetOnExit);
+  const hasExplicitTokenAuthInput =
+    opts.gatewayToken !== undefined || opts.gatewayTokenRefEnv !== undefined;
+  let authMode =
+    explicitAuthMode ??
+    (hasExplicitTokenAuthInput
+      ? "token"
+      : opts.gatewayPassword !== undefined
+        ? "password"
+        : existingGateway?.auth?.mode) ??
+    "token";
+  const tailscaleMode = opts.tailscale ?? existingGateway?.tailscale?.mode ?? "off";
 
   // Tighten config to safe combos:
   // - If Tailscale is on, force loopback bind (the tunnel handles external access).
   // - If using Tailscale Funnel, require password auth.
-  if (tailscaleMode !== "off" && bind !== "loopback") {
+  // Preserve an existing combination on unrelated reruns; only normalize when
+  // the operator is changing one of the fields that participates in the rule.
+  const changesBindOrTailscale = opts.gatewayBind !== undefined || opts.tailscale !== undefined;
+  if (changesBindOrTailscale && tailscaleMode !== "off" && bind !== "loopback") {
     bind = "loopback";
   }
-  if (tailscaleMode === "funnel" && authMode !== "password") {
+  const changesAuthOrTailscale =
+    explicitAuthMode !== undefined || hasExplicitTokenAuthInput || opts.tailscale !== undefined;
+  if (changesAuthOrTailscale && tailscaleMode === "serve" && authMode === "none") {
+    authMode = "token";
+  }
+  if (changesAuthOrTailscale && tailscaleMode === "funnel" && authMode !== "password") {
     authMode = "password";
   }
 
@@ -75,7 +119,8 @@ export function applyNonInteractiveGatewayConfig(params: {
   // plaintext > ambient OPENCLAW_GATEWAY_TOKEN > randomToken(). Ambient env
   // must not rotate a token already written to disk — a stale shell or
   // launchd env var otherwise breaks already-paired clients.
-  let gatewayToken = explicitGatewayToken || existingPlaintextToken || envGatewayToken || undefined;
+  const gatewayToken =
+    explicitGatewayToken || existingPlaintextToken || envGatewayToken || undefined;
   const gatewayTokenRefEnv = normalizeOptionalString(opts.gatewayTokenRefEnv ?? "") ?? "";
 
   if (authMode === "token") {
@@ -113,13 +158,7 @@ export function applyNonInteractiveGatewayConfig(params: {
           auth: {
             ...nextConfig.gateway?.auth,
             mode: "token",
-            token: {
-              source: "env",
-              provider: resolveDefaultSecretProviderAlias(nextConfig, "env", {
-                preferFirstProviderForSource: true,
-              }),
-              id: gatewayTokenRefEnv,
-            },
+            token: createGatewayEnvSecretRef(nextConfig, gatewayTokenRefEnv),
           },
         },
       };
@@ -140,9 +179,18 @@ export function applyNonInteractiveGatewayConfig(params: {
         },
       };
     } else {
-      if (!gatewayToken) {
-        gatewayToken = randomToken();
-      }
+      // `--secret-input-mode ref` covers the gateway token too. An ambient
+      // OPENCLAW_GATEWAY_TOKEN keeps its env ref so a later rotation still wins;
+      // copying it into the store would silently pin the stale value. Anything else
+      // is a value setup itself holds, with nothing for an env/file/exec ref to point
+      // at, so the shared secret store keeps it and config keeps only the reference.
+      const tokenInput = resolveGeneratedTokenInput({
+        config: nextConfig,
+        secretInputMode: opts.secretInputMode,
+        token: gatewayToken,
+        ambientEnvOnly:
+          !explicitGatewayToken && !existingPlaintextToken && Boolean(envGatewayToken),
+      });
       nextConfig = {
         ...nextConfig,
         gateway: {
@@ -150,7 +198,7 @@ export function applyNonInteractiveGatewayConfig(params: {
           auth: {
             ...nextConfig.gateway?.auth,
             mode: "token",
-            token: gatewayToken,
+            token: tokenInput,
           },
         },
       };
@@ -158,7 +206,12 @@ export function applyNonInteractiveGatewayConfig(params: {
   }
 
   if (authMode === "password") {
-    const password = opts.gatewayPassword?.trim();
+    const input = opts.gatewayPassword;
+    const password =
+      input === undefined
+        ? (nextConfig.gateway?.auth?.password ??
+          normalizeOptionalString(process.env.OPENCLAW_GATEWAY_PASSWORD))
+        : normalizeOptionalString(input);
     if (!password) {
       runtime.error(
         "Missing --gateway-password for password auth. Pass --gateway-password or use --gateway-auth token.",
@@ -173,7 +226,14 @@ export function applyNonInteractiveGatewayConfig(params: {
         auth: {
           ...nextConfig.gateway?.auth,
           mode: "password",
-          password,
+          ...(input !== undefined
+            ? {
+                password:
+                  opts.secretInputMode === "ref"
+                    ? createGatewayEnvSecretRef(nextConfig, "OPENCLAW_GATEWAY_PASSWORD")
+                    : password,
+              }
+            : {}),
         },
       },
     };
@@ -188,7 +248,6 @@ export function applyNonInteractiveGatewayConfig(params: {
       tailscale: {
         ...nextConfig.gateway?.tailscale,
         mode: tailscaleMode,
-        resetOnExit: tailscaleResetOnExit,
       },
     },
   };
@@ -199,6 +258,5 @@ export function applyNonInteractiveGatewayConfig(params: {
     bind,
     authMode,
     tailscaleMode,
-    tailscaleResetOnExit,
   };
 }

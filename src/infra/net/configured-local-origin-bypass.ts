@@ -1,3 +1,5 @@
+// Configured local-origin bypass logic decides when managed proxy routing may
+// skip proxying a known loopback provider origin.
 import { isLoopbackIpAddress } from "@openclaw/net-policy/ip";
 import { getActiveManagedProxyLoopbackMode } from "./proxy/active-proxy-state.js";
 import { SsrFBlockedError } from "./ssrf.js";
@@ -56,6 +58,14 @@ function isExactConfiguredLocalOriginBypass(params: {
 
 function isPinnedLoopbackTarget(addresses: readonly string[]): boolean {
   return addresses.length > 0 && addresses.every((address) => isLoopbackIpAddress(address));
+}
+
+/** Return whether proving a configured local-origin bypass requires target DNS. */
+export function shouldResolveConfiguredLocalOriginManagedProxyBypass(params: {
+  url: URL;
+  managedProxyBypass: ConfiguredLocalOriginManagedProxyBypass | undefined;
+}): boolean {
+  return isExactConfiguredLocalOriginBypass(params);
 }
 
 /** Return whether a configured local provider origin may bypass the managed proxy. */

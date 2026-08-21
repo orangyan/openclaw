@@ -1,3 +1,4 @@
+// Pairing access helpers resolve channel/device pairing visibility for plugin callers.
 import type { ChannelId } from "../channels/plugins/types.public.js";
 import type { PluginRuntime } from "../plugins/runtime/types.js";
 import { normalizeAccountId } from "../routing/session-key.js";
@@ -26,6 +27,13 @@ export function createScopedPairingAccess(params: {
       params.core.channel.pairing.readAllowFromStore({
         channel: params.channel,
         accountId: resolvedAccountId,
+      }),
+    /** Delete one approval after the owning channel durably consumes it. */
+    removeAllowFromStoreEntry: (entry: string | number) =>
+      params.core.channel.pairing.removeAllowFromStoreEntry({
+        channel: params.channel,
+        accountId: resolvedAccountId,
+        entry,
       }),
     /** Read another channel/account allow-list for DM policy cross-checks. */
     readStoreForDmPolicy: (provider: ChannelId, accountId: string) =>

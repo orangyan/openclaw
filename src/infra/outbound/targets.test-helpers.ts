@@ -1,3 +1,5 @@
+// Shared outbound target test fixtures provide deterministic channel plugins,
+// target parsing, and session-route behavior.
 import type {
   ChannelMessagingAdapter,
   ChannelOutboundAdapter,
@@ -19,7 +21,7 @@ function stripTestPrefix(raw: string, channelId: string): string {
 }
 
 /** Parses forum test targets with optional topic/thread suffixes. */
-export function parseForumTargetForTest(raw: string): {
+function parseForumTargetForTest(raw: string): {
   roomId: string;
   threadId?: number;
   chatType: "direct" | "group" | "unknown";
@@ -191,6 +193,9 @@ export function createGenericTargetTestPlugin(
     },
     messaging: {
       targetPrefixes: [String(id)],
+      // Owner-route tests need positive direct classification; syntax alone
+      // never admits an implicit owner destination.
+      inferTargetChatType: ({ to }) => (/^user:/i.test(to) ? "direct" : undefined),
     },
     resolveDefaultTo: ({ cfg }) => readTestDefaultTo(cfg, String(id)),
   });

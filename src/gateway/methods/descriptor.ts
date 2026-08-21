@@ -1,3 +1,4 @@
+// Gateway method descriptor types define the reusable contract shared by core, plugin, channel, and auxiliary methods.
 import type { OperatorScope } from "../operator-scopes.js";
 
 /** Scope marker for methods that only authenticated node clients may call. */
@@ -19,7 +20,8 @@ export type GatewayMethodOwner =
   | { kind: "aux"; area: string };
 
 /** Startup availability flag exposed to clients as retryable startup-unavailable errors. */
-export type GatewayMethodStartupAvailability = "available" | "unavailable-until-sidecars";
+type GatewayMethodStartupAvailability = "available" | "unavailable-until-sidecars";
+export type GatewayMethodProfileAccess = "independent" | "required";
 
 export type GatewayMethodHandler = (opts: never) => unknown;
 
@@ -29,6 +31,8 @@ export type GatewayMethodDescriptor = {
   handler: GatewayMethodHandler;
   scope: GatewayMethodScope;
   owner: GatewayMethodOwner;
+  profileAccess: GatewayMethodProfileAccess;
+  since?: string;
   startup?: GatewayMethodStartupAvailability;
   controlPlaneWrite?: boolean;
   advertise?: boolean;
@@ -36,17 +40,24 @@ export type GatewayMethodDescriptor = {
 };
 
 /** Input descriptor shape before registry normalization trims and validates the method name. */
-export type GatewayMethodDescriptorInput = Omit<GatewayMethodDescriptor, "name"> & {
+export type GatewayMethodDescriptorInput = Omit<
+  GatewayMethodDescriptor,
+  "name" | "profileAccess"
+> & {
   name: string;
+  profileAccess?: GatewayMethodProfileAccess;
 };
 
 /** Read-only method registry view used by request dispatch and method listing. */
 export type GatewayMethodRegistryView = {
+  /** Opaque registry handle carried into request scope by the gateway composition root. */
+  pluginRegistry?: object;
   getHandler: (name: string) => GatewayMethodHandler | undefined;
   listMethods: () => string[];
   listAdvertisedMethods: () => string[];
   getScope: (name: string) => GatewayMethodScope | undefined;
   isStartupUnavailable: (name: string) => boolean;
   isControlPlaneWrite: (name: string) => boolean;
+  requiresAuthenticatedProfile: (name: string) => boolean;
   descriptors: () => readonly GatewayMethodDescriptor[];
 };

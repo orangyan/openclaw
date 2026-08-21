@@ -1,17 +1,29 @@
+// Verifies live cache regression baseline classification without live providers.
 import { describe, expect, it } from "vitest";
-import { testing } from "./live-cache-regression-runner.js";
-import { ProviderAuthError } from "./model-auth-runtime-shared.js";
+import {
+  assertAgainstBaseline,
+  evaluateAgainstBaseline,
+  isAnthropicToolProbeDrift,
+  resolveCacheProbeMaxTokens,
+  resolveLiveCacheProviderPool,
+  shouldAcceptEmptyCacheProbe,
+  shouldRetryBaselineFindings,
+  shouldRetryCacheProbeText,
+} from "./live-cache-regression-policy.js";
 import {
   LiveCachePrerequisiteSkip,
   toLiveCachePrerequisiteSkip,
 } from "./live-cache-test-support.js";
+import { ProviderAuthError } from "./model-auth-runtime-shared.js";
 
 describe("live cache regression runner", () => {
   it("keeps OpenAI image cache floors observable without blocking release validation", () => {
+    // OpenAI cache metrics are provider-dependent and advisory here: keep the
+    // warning visible while avoiding a hard release gate.
     const regressions: string[] = [];
     const warnings: string[] = [];
 
-    testing.assertAgainstBaseline({
+    assertAgainstBaseline({
       lane: "image",
       provider: "openai",
       result: {
@@ -37,7 +49,7 @@ describe("live cache regression runner", () => {
     const regressions: string[] = [];
     const warnings: string[] = [];
 
-    testing.assertAgainstBaseline({
+    assertAgainstBaseline({
       lane: "stable",
       provider: "openai",
       result: {
@@ -60,8 +72,10 @@ describe("live cache regression runner", () => {
   });
 
   it("retries hard cache baseline misses once", () => {
+    // Hard regressions get one rerun to absorb provider cache warmup jitter;
+    // advisory warnings should not trigger reruns.
     expect(
-      testing.shouldRetryBaselineFindings(
+      shouldRetryBaselineFindings(
         {
           regressions: ["anthropic:image cacheRead=0 < min=4500"],
           warnings: [],
@@ -70,7 +84,7 @@ describe("live cache regression runner", () => {
       ),
     ).toBe(true);
     expect(
-      testing.shouldRetryBaselineFindings(
+      shouldRetryBaselineFindings(
         {
           regressions: ["anthropic:image cacheRead=0 < min=4500"],
           warnings: [],
@@ -79,7 +93,7 @@ describe("live cache regression runner", () => {
       ),
     ).toBe(false);
     expect(
-      testing.shouldRetryBaselineFindings(
+      shouldRetryBaselineFindings(
         {
           regressions: [],
           warnings: ["openai:image cacheRead=0 < min=3840"],
@@ -97,7 +111,7 @@ describe("live cache regression runner", () => {
       openai: {},
     };
 
-    const resolved = await testing.resolveLiveCacheProviderPool({
+    const resolved = await resolveLiveCacheProviderPool({
       config: {
         provider: "openai",
         api: "openai-responses",
@@ -124,6 +138,8 @@ describe("live cache regression runner", () => {
   });
 
   it("keeps missing Anthropic live-cache prerequisites blocking", async () => {
+    // Anthropic is the hard baseline provider, so missing prerequisites are
+    // treated as validation failures rather than advisory skips.
     const regressions: string[] = [];
     const warnings: string[] = [];
     const summary: Record<string, Record<string, unknown>> = {
@@ -131,7 +147,7 @@ describe("live cache regression runner", () => {
       openai: {},
     };
 
-    const resolved = await testing.resolveLiveCacheProviderPool({
+    const resolved = await resolveLiveCacheProviderPool({
       config: {
         provider: "anthropic",
         api: "anthropic-messages",
@@ -170,35 +186,35 @@ describe("live cache regression runner", () => {
 
   it("retries a cache probe twice when provider text misses the sentinel", () => {
     expect(
-      testing.shouldRetryCacheProbeText({
+      shouldRetryCacheProbeText({
         attempt: 1,
         suffix: "openai-stable-hit-a",
         text: "",
       }),
     ).toBe(true);
     expect(
-      testing.shouldRetryCacheProbeText({
+      shouldRetryCacheProbeText({
         attempt: 2,
         suffix: "openai-stable-hit-a",
         text: "",
       }),
     ).toBe(true);
     expect(
-      testing.shouldRetryCacheProbeText({
+      shouldRetryCacheProbeText({
         attempt: 3,
         suffix: "openai-stable-hit-a",
         text: "",
       }),
     ).toBe(false);
     expect(
-      testing.shouldRetryCacheProbeText({
+      shouldRetryCacheProbeText({
         attempt: 1,
         suffix: "openai-stable-hit-a",
         text: "I saw openai-stable-hit-a.",
       }),
     ).toBe(true);
     expect(
-      testing.shouldRetryCacheProbeText({
+      shouldRetryCacheProbeText({
         attempt: 1,
         suffix: "openai-stable-hit-a",
         text: "CACHE-OK openai-stable-hit-a",
@@ -208,25 +224,25 @@ describe("live cache regression runner", () => {
 
   it("keeps cache probes above the provider empty-output floor", () => {
     expect(
-      testing.resolveCacheProbeMaxTokens({
+      resolveCacheProbeMaxTokens({
         maxTokens: 32,
         providerTag: "openai",
       }),
     ).toBe(1024);
     expect(
-      testing.resolveCacheProbeMaxTokens({
+      resolveCacheProbeMaxTokens({
         maxTokens: 512,
         providerTag: "openai",
       }),
     ).toBe(1024);
     expect(
-      testing.resolveCacheProbeMaxTokens({
+      resolveCacheProbeMaxTokens({
         maxTokens: 2048,
         providerTag: "openai",
       }),
     ).toBe(2048);
     expect(
-      testing.resolveCacheProbeMaxTokens({
+      resolveCacheProbeMaxTokens({
         maxTokens: 32,
         providerTag: "anthropic",
       }),
@@ -234,46 +250,44 @@ describe("live cache regression runner", () => {
   });
 
   it("classifies Anthropic tool-only probe misses as provider drift", () => {
-    expect(testing.isAnthropicToolProbeDrift(new Error("expected tool call for noop"))).toBe(true);
+    expect(isAnthropicToolProbeDrift(new Error("expected tool call for noop"))).toBe(true);
     expect(
-      testing.isAnthropicToolProbeDrift(
-        new Error('expected tool-only response for noop, got "ok"'),
-      ),
+      isAnthropicToolProbeDrift(new Error('expected tool-only response for noop, got "ok"')),
     ).toBe(true);
-    expect(testing.isAnthropicToolProbeDrift(new Error("other failure"))).toBe(false);
+    expect(isAnthropicToolProbeDrift(new Error("other failure"))).toBe(false);
   });
 
   it("accepts empty cache probe text only when usage is observable", () => {
     expect(
-      testing.shouldAcceptEmptyCacheProbe({
+      shouldAcceptEmptyCacheProbe({
         providerTag: "openai",
         text: "",
         usage: { input: 5_000 },
       }),
     ).toBe(true);
     expect(
-      testing.shouldAcceptEmptyCacheProbe({
+      shouldAcceptEmptyCacheProbe({
         providerTag: "openai",
         text: "",
         usage: { cacheRead: 4_608 },
       }),
     ).toBe(true);
     expect(
-      testing.shouldAcceptEmptyCacheProbe({
+      shouldAcceptEmptyCacheProbe({
         providerTag: "openai",
         text: "wrong",
         usage: { input: 5_000 },
       }),
     ).toBe(false);
     expect(
-      testing.shouldAcceptEmptyCacheProbe({
+      shouldAcceptEmptyCacheProbe({
         providerTag: "anthropic",
         text: "",
         usage: { input: 5_000 },
       }),
     ).toBe(true);
     expect(
-      testing.shouldAcceptEmptyCacheProbe({
+      shouldAcceptEmptyCacheProbe({
         providerTag: "openai",
         text: "",
         usage: {},
@@ -282,7 +296,7 @@ describe("live cache regression runner", () => {
   });
 
   it("accepts a warmup that already hits the provider cache", () => {
-    const findings = testing.evaluateAgainstBaseline({
+    const findings = evaluateAgainstBaseline({
       lane: "image",
       provider: "anthropic",
       result: {
@@ -305,7 +319,9 @@ describe("live cache regression runner", () => {
   });
 
   it("still rejects warmups with no cache write or cache hit evidence", () => {
-    const findings = testing.evaluateAgainstBaseline({
+    // A successful best probe is not enough: warmup must prove either cache
+    // write or read evidence so the measured hit is meaningful.
+    const findings = evaluateAgainstBaseline({
       lane: "image",
       provider: "anthropic",
       result: {

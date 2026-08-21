@@ -1,3 +1,5 @@
+// Gateway run-id to session-key resolver.
+// Bridges live agent run context with persisted session stores.
 import {
   asDateTimestampMs,
   resolveExpiresAtMsFromDurationMs,
@@ -6,7 +8,8 @@ import { resolveDefaultAgentId } from "../agents/agent-scope.js";
 import { getRuntimeConfig } from "../config/io.js";
 import type { SessionEntry } from "../config/sessions.js";
 import type { OpenClawConfig } from "../config/types.js";
-import { getAgentRunContext } from "../infra/agent-events.js";
+import { getAgentRunContext } from "../infra/agent-run-registry.js";
+import { pruneMapToMaxSize } from "../infra/map-size.js";
 import {
   normalizeAgentId,
   parseAgentSessionKey,
@@ -14,7 +17,7 @@ import {
 } from "../routing/session-key.js";
 import { resolvePreferredSessionKeyForSessionIdMatches } from "../sessions/session-id-resolution.js";
 import { resolveSessionStoreAgentId, resolveSessionStoreKey } from "./session-store-key.js";
-import { loadCombinedSessionStoreForGateway } from "./session-utils.js";
+import { loadCombinedSessionStoreForGatewayCore } from "./session-utils.js";
 
 const RUN_LOOKUP_CACHE_LIMIT = 256;
 const RUN_LOOKUP_MISS_TTL_MS = 1_000;
@@ -46,13 +49,12 @@ function setResolvedSessionKeyCache(
     !resolvedSessionKeyByRunId.has(cacheKey) &&
     resolvedSessionKeyByRunId.size >= RUN_LOOKUP_CACHE_LIMIT
   ) {
-    const oldest = resolvedSessionKeyByRunId.keys().next().value;
-    if (oldest) {
-      resolvedSessionKeyByRunId.delete(oldest);
-    }
+    pruneMapToMaxSize(resolvedSessionKeyByRunId, RUN_LOOKUP_CACHE_LIMIT - 1);
   }
   let expiresAt: number | null = null;
   if (sessionKey === null) {
+    // Negative caching avoids repeated full-store scans while still allowing
+    // a just-created run/session pair to appear shortly after the first lookup.
     const missExpiresAt = resolveExpiresAtMsFromDurationMs(RUN_LOOKUP_MISS_TTL_MS);
     if (missExpiresAt === undefined) {
       return;
@@ -115,13 +117,15 @@ export function resolveSessionKeyForRun(runId: string, opts: { agentId?: string 
     }
     resolvedSessionKeyByRunId.delete(cacheKey);
   }
-  const { store } = loadCombinedSessionStoreForGateway(cfg, { agentId: requestedAgentId });
+  const { store } = loadCombinedSessionStoreForGatewayCore(cfg, { agentId: requestedAgentId });
   const matches = Object.entries(store).filter(
     (entry): entry is [string, SessionEntry] =>
       entry[1]?.sessionId === runId && sessionKeyMatchesAgent(entry[0], requestedAgentId, cfg),
   );
   const storeKey = resolvePreferredSessionKeyForSessionIdMatches(matches, runId);
   if (storeKey) {
+    // Return caller-facing agent request keys, not raw store keys, because
+    // HTTP/RPC clients reuse this value in later session operations.
     const sessionKey = resolveRunSessionKeyForCaller(storeKey);
     setResolvedSessionKeyCache(runId, cacheAgentId, sessionKey);
     return sessionKey;

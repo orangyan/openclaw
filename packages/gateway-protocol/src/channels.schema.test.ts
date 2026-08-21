@@ -1,3 +1,4 @@
+// Gateway Protocol tests cover channels.schema behavior.
 import { Compile } from "typebox/compile";
 import { describe, expect, it } from "vitest";
 import { ChannelsStatusResultSchema, WebLoginWaitParamsSchema } from "./schema/channels.js";
@@ -52,6 +53,16 @@ describe("ChannelsStatusResultSchema", () => {
               running: true,
               connected: false,
               healthState: "stale-socket",
+              lastError: null,
+              lastStartAt: null,
+              lastStopAt: null,
+              lastInboundAt: null,
+              lastOutboundAt: null,
+              credentialSource: "service-account",
+              audienceType: "app-url",
+              audience: "https://chat.example.test",
+              webhookPath: "/googlechat",
+              webhookUrl: null,
             },
           ],
         },
@@ -60,6 +71,7 @@ describe("ChannelsStatusResultSchema", () => {
         warnings: ["discord:default probe timed out after 1000ms"],
         eventLoop: {
           degraded: true,
+          degradedSinceMs: 61_000,
           reasons: ["event_loop_delay", "cpu"],
           intervalMs: 62_000,
           delayP99Ms: 1_250.5,

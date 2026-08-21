@@ -1,3 +1,4 @@
+// Plugin HTTP route matching orders registered exact and prefix routes against canonical path candidates.
 import type { PluginRegistry } from "../../../plugins/registry.js";
 import { canonicalizePathVariant } from "../../security-path.js";
 import {
@@ -12,7 +13,7 @@ import {
 type PluginHttpRouteEntry = NonNullable<PluginRegistry["httpRoutes"]>[number];
 
 /** Returns true when a registered route matches any canonical request candidate. */
-export function doesPluginRouteMatchPath(
+function doesPluginRouteMatchPath(
   route: PluginHttpRouteEntry,
   context: PluginRoutePathContext,
 ): boolean {

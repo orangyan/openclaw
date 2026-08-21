@@ -1,13 +1,16 @@
+// Tool invocation methods adapt gateway-visible tools to RPC callers with
+// protocol-shaped success, approval-required, validation, and error payloads.
 import { normalizeOptionalString } from "@openclaw/normalization-core/string-coerce";
 import {
   ErrorCodes,
   errorShape,
-  formatValidationErrors,
   validateToolsInvokeParams,
   type ToolsInvokeResult,
 } from "../../../packages/gateway-protocol/src/index.js";
+import { resolveGatewayConversationReadOrigin } from "../conversation-read-origin.js";
 import { invokeGatewayTool } from "../tools-invoke-shared.js";
 import type { GatewayRequestHandlers } from "./types.js";
+import { assertValidParams } from "./validation.js";
 
 /**
  * RPC adapter for invoking gateway-visible tools from connected clients.
@@ -34,16 +37,8 @@ function resolveRpcErrorCode(params: {
 
 /** Handles `tools.invoke` with protocol-shaped success and failure payloads. */
 export const toolsInvokeHandlers: GatewayRequestHandlers = {
-  "tools.invoke": async ({ params, respond, context }) => {
-    if (!validateToolsInvokeParams(params)) {
-      respond(
-        false,
-        undefined,
-        errorShape(
-          ErrorCodes.INVALID_REQUEST,
-          `invalid tools.invoke params: ${formatValidationErrors(validateToolsInvokeParams.errors)}`,
-        ),
-      );
+  "tools.invoke": async ({ params, respond, context, client }) => {
+    if (!assertValidParams(params, validateToolsInvokeParams, "tools.invoke", respond)) {
       return;
     }
     const requestedToolName = normalizeOptionalString(params.name);
@@ -59,6 +54,12 @@ export const toolsInvokeHandlers: GatewayRequestHandlers = {
     const outcome = await invokeGatewayTool({
       cfg: context.getRuntimeConfig(),
       input: params,
+      senderIsOwner: client?.connect?.scopes?.includes("operator.admin"),
+      clientCaps: client?.connect?.caps,
+      conversationReadOrigin: resolveGatewayConversationReadOrigin({
+        client,
+        requestedOrigin: params.conversationReadOrigin,
+      }),
       toolCallIdPrefix: "rpc",
       approvalMode: params.confirm === true ? "request" : "report",
     });

@@ -1,3 +1,4 @@
+// Root Package Overrides tests cover root package overrides script behavior.
 import fs from "node:fs";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
@@ -36,6 +37,12 @@ function readPackageManifest(packagePath: string): RootPackageManifest {
 }
 
 describe("root package override guardrails", () => {
+  it("pins the active axios override to an exact version", () => {
+    const pnpmWorkspace = readPnpmWorkspaceConfig();
+
+    expect(pnpmWorkspace.overrides?.axios).toMatch(/^\d+\.\d+\.\d+$/u);
+  });
+
   it("keeps Bedrock runtime ownership in the Amazon provider plugin", () => {
     const manifest = readRootManifest();
     const pnpmWorkspace = readPnpmWorkspaceConfig();

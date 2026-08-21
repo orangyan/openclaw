@@ -1,3 +1,5 @@
+// Node invocation forwarding sanitizer.
+// Strips or validates gateway-only control fields before node transport.
 import type { ExecApprovalManager } from "./exec-approval-manager.js";
 import { sanitizeSystemRunParamsForForwarding } from "./node-invoke-system-run-approval.js";
 import type { GatewayClient } from "./server-methods/types.js";
@@ -13,7 +15,11 @@ export function sanitizeNodeInvokeParamsForForwarding(opts: {
   client: GatewayClient | null;
   execApprovalManager?: ExecApprovalManager;
 }):
-  | { ok: true; params: unknown }
+  | {
+      ok: true;
+      params: unknown;
+      approvalAuthority?: { recordId: string; decision: "allow-once" | "allow-always" };
+    }
   | { ok: false; message: string; details?: Record<string, unknown> } {
   if (opts.command === "system.run") {
     return sanitizeSystemRunParamsForForwarding({

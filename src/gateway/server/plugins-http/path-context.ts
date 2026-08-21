@@ -1,3 +1,4 @@
+// Plugin HTTP path context canonicalizes request paths for route matching and protected-route auth checks.
 import { normalizeLowercaseStringOrEmpty } from "@openclaw/normalization-core/string-coerce";
 import {
   PROTECTED_PLUGIN_ROUTE_PREFIXES,
@@ -43,6 +44,11 @@ export function isProtectedPluginRoutePathFromContext(context: PluginRoutePathCo
       ),
     )
   ) {
+    return true;
+  }
+  // An unresolved decode chain could still reveal a protected prefix on a later pass.
+  // Require auth rather than treating an intentionally over-encoded route as public.
+  if (context.decodePassLimitReached) {
     return true;
   }
   if (!context.malformedEncoding) {

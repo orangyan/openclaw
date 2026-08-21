@@ -18,13 +18,14 @@ import { isSecretRef, type SecretInput } from "../config/types.secrets.js";
 import { applyPrimaryModel } from "../plugins/provider-model-primary.js";
 import { normalizeOptionalSecretInput } from "../utils/normalize-secret-input.js";
 import { normalizeAlias } from "./models/alias-name.js";
+import { projectAgentModelDefaults, type OnboardingAgentTarget } from "./onboard-agent-target.js";
 
 /**
  * Wizard default for non-Azure custom APIs when context length is unknown.
  * Mirrors the generic persisted custom-model catalog fallback and leaves enough
  * room above the default compaction reserve floor in `agent-settings.ts`.
  */
-export const CUSTOM_PROVIDER_DEFAULT_CONTEXT_WINDOW_TOKENS = 128_000;
+const CUSTOM_PROVIDER_DEFAULT_CONTEXT_WINDOW_TOKENS = 128_000;
 const DEFAULT_CONTEXT_WINDOW = CUSTOM_PROVIDER_DEFAULT_CONTEXT_WINDOW_TOKENS;
 const DEFAULT_MAX_TOKENS = 4096;
 // Azure OpenAI uses the Responses API, which supports larger generated defaults.
@@ -33,7 +34,7 @@ const AZURE_DEFAULT_MAX_TOKENS = 16_384;
 type CustomModelInput = "text" | "image";
 
 /** Result of best-effort image-input inference for custom model ids. */
-export type CustomModelImageInputInference = {
+type CustomModelImageInputInference = {
   supportsImageInput: boolean;
   confidence: "known" | "unknown";
 };
@@ -81,11 +82,6 @@ export function resolveCustomModelImageInputInference(
   }
 
   return { supportsImageInput: false, confidence: "unknown" };
-}
-
-/** Returns whether a custom model id is known to support image input. */
-export function inferCustomModelSupportsImageInput(modelId: string): boolean {
-  return resolveCustomModelImageInputInference(modelId).supportsImageInput;
 }
 
 function resolveCustomModelSupportsImageInput(params: {
@@ -189,7 +185,7 @@ export type CustomApiResult = {
 };
 
 /** Inputs used to persist a custom provider in the OpenClaw config. */
-export type ApplyCustomApiConfigParams = {
+type ApplyCustomApiConfigParams = {
   config: OpenClawConfig;
   baseUrl: string;
   modelId: string;
@@ -198,10 +194,12 @@ export type ApplyCustomApiConfigParams = {
   providerId?: string;
   alias?: string;
   supportsImageInput?: boolean;
+  target?: OnboardingAgentTarget;
+  setAsPrimary?: boolean;
 };
 
 /** Raw CLI flag values for non-interactive custom API setup. */
-export type ParseNonInteractiveCustomApiFlagsParams = {
+type ParseNonInteractiveCustomApiFlagsParams = {
   baseUrl?: string;
   modelId?: string;
   compatibility?: string;
@@ -211,7 +209,7 @@ export type ParseNonInteractiveCustomApiFlagsParams = {
 };
 
 /** Validated non-interactive custom API setup flags. */
-export type ParsedNonInteractiveCustomApiFlags = {
+type ParsedNonInteractiveCustomApiFlags = {
   baseUrl: string;
   modelId: string;
   compatibility: CustomApiCompatibility;
@@ -220,7 +218,7 @@ export type ParsedNonInteractiveCustomApiFlags = {
   supportsImageInput?: boolean;
 };
 
-export type CustomApiErrorCode =
+type CustomApiErrorCode =
   | "missing_required"
   | "invalid_compatibility"
   | "invalid_base_url"
@@ -239,14 +237,14 @@ export class CustomApiError extends Error {
   }
 }
 
-export type ResolveCustomProviderIdParams = {
+type ResolveCustomProviderIdParams = {
   config: OpenClawConfig;
   baseUrl: string;
   providerId?: string;
 };
 
 /** Provider id selected for a custom endpoint, with collision rename metadata. */
-export type ResolvedCustomProviderId = {
+type ResolvedCustomProviderId = {
   providerId: string;
   providerIdRenamedFrom?: string;
 };
@@ -560,7 +558,7 @@ export function parseNonInteractiveCustomApiFlags(
   };
 }
 
-/** Applies custom provider config and makes the custom model the primary model. */
+/** Applies custom provider config and optionally makes its model the primary model. */
 export function applyCustomApiConfig(params: ApplyCustomApiConfigParams): CustomApiResult {
   const baseUrl = normalizeOptionalString(params.baseUrl) ?? "";
   if (!URL.canParse(baseUrl)) {
@@ -692,7 +690,9 @@ export function applyCustomApiConfig(params: ApplyCustomApiConfigParams): Custom
     },
   };
 
-  config = applyPrimaryModel(config, modelRef);
+  if (params.setAsPrimary !== false) {
+    config = applyPrimaryModel(config, modelRef);
+  }
   if (isAzure && isLikelyReasoningModel) {
     const existingPerModelThinking = config.agents?.defaults?.models?.[modelRef]?.params?.thinking;
     if (!existingPerModelThinking) {
@@ -736,6 +736,10 @@ export function applyCustomApiConfig(params: ApplyCustomApiConfigParams): Custom
         },
       },
     };
+  }
+
+  if (params.target && params.config.agents?.ownership === "explicit") {
+    config = projectAgentModelDefaults(params.config, params.target, config);
   }
 
   return {
