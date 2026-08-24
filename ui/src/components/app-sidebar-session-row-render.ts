@@ -56,10 +56,12 @@ export interface SessionListHost {
   readonly sessionData: Pick<
     SessionDataController,
     | "approvalBadgeSnapshot"
+    | "childSessionErrorsByParent"
     | "loadMoreSessionCatalog"
     | "presenceInstanceId"
     | "presencePayload"
     | "refreshSessionCatalogs"
+    | "retryChildSessions"
     | "sessionCatalogRefreshStatus"
     | "sessionMutationError"
   >;
@@ -76,6 +78,7 @@ export interface SessionListHost {
   >;
   readonly sidebarMenus: Pick<
     SidebarMenusController,
+    | "catalogMenu"
     | "catalogViewMenuPosition"
     | "openCatalogViewMenu"
     | "openSessionGroupMenu"
@@ -99,6 +102,7 @@ export interface SessionListHost {
     sessionKey: string,
     worktreeId: string,
   ): SessionPullRequestIndicatorState;
+  mainSessionRow(): { key: string } | null;
   isSessionChildrenExpanded(session: SidebarRecentSession): boolean;
   startSessionDrag(session: SidebarRecentSession): void;
   finishSessionDrag(): void;
@@ -220,11 +224,13 @@ export function renderRecentSession(params: {
       channelAvatarAuth,
     );
   const trailingDescription = session.isChild
-    ? ""
+    ? running && session.unread
+      ? t("sessionsView.unread")
+      : ""
     : describeSessionTrailingState(session, pullRequestState);
   const hasTrail = session.isChild && (session.runtimeMs != null || session.startedAt != null);
   const metaId = hasTrail ? sidebarSessionMetaId(session.key) : undefined;
-  const stateId = trailingIndicator === nothing ? undefined : sidebarSessionStateId(session.key);
+  const stateId = trailingDescription ? sidebarSessionStateId(session.key) : undefined;
   const openMenuFromEvent = (event: MouseEvent | KeyboardEvent) =>
     handleContextMenuEvent(
       event,
@@ -358,7 +364,9 @@ export function renderRecentSession(params: {
                 ),
               })}
               ${trailingIndicator === nothing
-                ? nothing
+                ? trailingDescription
+                  ? html`<span class="sr-only" id=${stateId}>${trailingDescription}</span>`
+                  : nothing
                 : html`<span class="session-row-aside">
                     <span
                       class="session-row-state"
@@ -454,6 +462,28 @@ export function renderRecentSession(params: {
   return keyed(session.key, row);
 }
 
+export function renderChildSessionLoadError(host: SessionListHost, parentKey: string) {
+  const error = host.sessionData.childSessionErrorsByParent.get(parentKey);
+  if (!error) {
+    return nothing;
+  }
+  return html`<div
+    class="sidebar-session-error callout danger"
+    data-child-session-error=${parentKey}
+    role="alert"
+  >
+    <span>${error}</span>
+    <button
+      class="sidebar-session-tree__show-more"
+      type="button"
+      data-retry-child-sessions=${parentKey}
+      @click=${() => host.sessionData.retryChildSessions(parentKey)}
+    >
+      ${t("common.retry")}
+    </button>
+  </div>`;
+}
+
 export function renderSessionTree(params: {
   host: SessionListHost;
   session: SidebarRecentSession;
@@ -498,6 +528,7 @@ export function renderSessionTree(params: {
                 ${t("sessionsView.showMoreChildren", { count: String(hiddenChildCount) })}
               </button>`
             : nothing}
+          ${renderChildSessionLoadError(host, session.key)}
           ${session.loadingChildren && session.children.length === 0
             ? html`<span class="sidebar-session-tree__loading">${t("common.loading")}</span>`
             : nothing}

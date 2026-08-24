@@ -324,7 +324,7 @@
 }
 
 .cron-table__row:hover,
-.cron-table__row:focus-visible {
+.cron-table__row:focus-within {
   background: var(--bg-hover);
 }
 
@@ -338,9 +338,13 @@
   align-items: flex-start;
   gap: 10px;
   min-width: 0;
+  padding: 0;
+  border: 0;
   color: var(--text-strong);
+  background: transparent;
   font-size: 13px;
   font-weight: 600;
+  text-align: left;
 }
 
 .cron-table__state {
@@ -1027,25 +1031,6 @@
     padding-left: 0;
     border-left: 0;
   }
-}
-
-/* Match the .btn--sm dropdown triggers beside it instead of the native look. */
-.cron-run-sort {
-  flex: 0 0 auto;
-  width: auto;
-  padding: 6px 10px;
-  font-size: 12px;
-  font-weight: 500;
-  color: var(--text);
-  border: 1px solid var(--border);
-  border-radius: var(--radius-md);
-  background: var(--bg-elevated);
-  cursor: var(--cursor-action);
-}
-
-.cron-run-sort:hover {
-  background: var(--bg-hover);
-  border-color: var(--border-strong);
 }
 
 .cron-runs__empty {

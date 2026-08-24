@@ -1504,6 +1504,26 @@ ${actionRun}`;
 }
 
 describe("ci workflow guards", () => {
+  it("gates frozen runtime-pair compatibility on the trusted suite outcome", () => {
+    const workflow = readReleaseChecksWorkflow();
+    const laneJob = workflow.jobs.qa_lab_runtime_pair_lane_release_checks;
+    const suiteValidation = laneJob.steps.find(
+      (step: WorkflowStep) => step.name === "Validate runtime-pair lane",
+    );
+    const reportValidation = laneJob.steps.find(
+      (step: WorkflowStep) => step.name === "Validate runtime-pair lane report",
+    );
+
+    for (const step of [suiteValidation, reportValidation]) {
+      expect(step?.env?.CANDIDATE_SUITE_OUTCOME).toBe(
+        "${{ steps.candidate_runtime_pair.outcome }}",
+      );
+      expect(step?.run).toContain('--candidate-suite-outcome "$CANDIDATE_SUITE_OUTCOME"');
+      expect(step?.run).toContain('--target-sha "$RELEASE_CHECK_TARGET_SHA"');
+      expect(step?.run).toContain('--lane "$RUNTIME_PAIR_LANE"');
+    }
+  });
+
   it("retains pending same-SHA QA calls in the shared concurrency group", () => {
     const workflowPath = ".github/workflows/qa-live-transports-convex.yml";
     const workflowSource = readFileSync(workflowPath, "utf8");
@@ -5175,8 +5195,24 @@ server.listen(0, "127.0.0.1", () => writeFileSync(readyPath, String(server.addre
     }
   });
 
-  it("bounds mantis discord smoke validation git fetches", () => {
-    const workflowPath = ".github/workflows/mantis-discord-smoke.yml";
+  it("bounds docs publish-repository Git transports", () => {
+    const source = readFileSync(".github/workflows/docs-sync-publish.yml", "utf8");
+    const transports = source
+      .split("\n")
+      .filter((line) => line.includes("git clone") || line.includes("git fetch origin main:"));
+
+    expect(transports).toHaveLength(3);
+    expect(
+      transports.every((line) =>
+        line.trimStart().startsWith("if timeout --signal=TERM --kill-after=10s 120s git"),
+      ),
+    ).toBe(true);
+  });
+
+  it.each([
+    [".github/workflows/mantis-discord-smoke.yml"],
+    [".github/workflows/plugin-clawhub-release.yml"],
+  ])("bounds %s git fetches", (workflowPath) => {
     const source = readFileSync(workflowPath, "utf8");
     const gitFetchLines = source.split("\n").filter((line) => line.includes("git fetch"));
 
@@ -7255,7 +7291,7 @@ printf '%s\n' "\${CURL_SUCCESS_IP:-203.0.113.7}"
     );
     expect(localeStep.run).toBe("pnpm ui:i18n:check");
     expect(readFileSync(".github/workflows/full-release-validation.yml", "utf8")).toContain(
-      'dispatch_and_wait ci.yml "$dispatch_run_name"',
+      'dispatch_child ci.yml "$dispatch_run_name"',
     );
   });
 
@@ -7546,8 +7582,12 @@ printf '%s\n' "\${CURL_SUCCESS_IP:-203.0.113.7}"
     const runStep = nodeTestJob.steps.find(
       (step: WorkflowStep) => step.name === "Run Node test shard",
     );
+    const buildRuntimeStep = nodeTestJob.steps.find(
+      (step: WorkflowStep) => step.name === "Build Node test runtime",
+    );
 
     expect(JSON.stringify(preflightJob.steps)).toContain("timeout_minutes: shard.timeoutMinutes");
+    expect(manifestStep.run).toContain("pretest_build_mode: shard.pretestBuildMode");
     expect(manifestStep.run).toContain(
       'shard.groups?.some((group) => group.shard_name.startsWith("core-tooling"))',
     );
@@ -7560,6 +7600,17 @@ printf '%s\n' "\${CURL_SUCCESS_IP:-203.0.113.7}"
     expect(runStep.env.OPENCLAW_NODE_TEST_TARGETS_JSON).toBe("${{ toJson(matrix.targets) }}");
     expect(runStep.env.OPENCLAW_NODE_TEST_VITEST_ARGS_JSON).toBe(
       "${{ needs.preflight.outputs.compatibility_target == 'true' && '[\"--hookTimeout=600000\"]' || '[]' }}",
+    );
+    expect(buildRuntimeStep).toMatchObject({
+      if: "matrix.pretest_build_mode != null",
+      env: {
+        OPENCLAW_BUILD_PRIVATE_QA: "${{ matrix.pretest_build_mode == 'private-qa' && '1' || '0' }}",
+        VITEST: "1",
+      },
+      run: "pnpm build",
+    });
+    expect(nodeTestJob.steps.indexOf(buildRuntimeStep)).toBeLessThan(
+      nodeTestJob.steps.indexOf(runStep),
     );
     const trustedRunnerStep = nodeTestJob.steps.find(
       (step: WorkflowStep) => step.name === "Checkout trusted Node shard runner",
@@ -7689,7 +7740,7 @@ printf '%s\n' "\${CURL_SUCCESS_IP:-203.0.113.7}"
     const compatibilityJob = workflow.jobs["checks-node-compat"];
     const fullReleaseWorkflow = readWorkflow(".github/workflows/full-release-validation.yml");
     const fullReleaseDispatch = fullReleaseWorkflow.jobs.normal_ci.steps.find(
-      (step: WorkflowStep) => step.name === "Dispatch and monitor CI",
+      (step: WorkflowStep) => step.name === "Dispatch CI",
     );
 
     expect(compatibilityJob.name).toBe("checks-node-compat-node22");
@@ -7697,7 +7748,7 @@ printf '%s\n' "\${CURL_SUCCESS_IP:-203.0.113.7}"
       "needs.preflight.outputs.run_build_artifacts == 'true' && github.event_name == 'workflow_dispatch'",
     );
     expect(fullReleaseDispatch.env.CHILD_WORKFLOW_KIND).toBe("ci");
-    expect(fullReleaseDispatch.run).toContain('dispatch_and_wait ci.yml "$dispatch_run_name"');
+    expect(fullReleaseDispatch.run).toContain('dispatch_child ci.yml "$dispatch_run_name"');
     expect(fullReleaseDispatch.run).toContain('-f target_ref="$TARGET_SHA"');
   });
 
@@ -9023,7 +9074,7 @@ printf '%s\n' "\${CURL_SUCCESS_IP:-203.0.113.7}"
     const telegramWorkflow = readWorkflow(".github/workflows/openclaw-release-telegram-qa.yml");
     const telegramProvenanceHelper = readFileSync("scripts/release-telegram-provenance.sh", "utf8");
     const fullReleaseDispatchStep = fullReleaseWorkflow.jobs.release_checks.steps.find(
-      (step: WorkflowStep) => step.name === "Dispatch and monitor release checks",
+      (step: WorkflowStep) => step.name === "Dispatch release checks",
     );
     const dispatchStep = releaseWorkflow.jobs.qa_live_telegram_release_checks.steps.find(
       (step: WorkflowStep) => step.name === "Dispatch and await trusted Telegram QA",
